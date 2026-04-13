@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WebAudio Keyboard</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    .panel { max-width: 980px; padding: 16px; border: 1px solid #ddd; border-radius: 12px; display: grid; gap: 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    label { font-weight: 600; }
+    select, input[type="range"] { margin-left: 8px; }
+    .hint { color: #555; font-size: 14px; line-height: 1.35; }
+    .small { font-size: 13px; color: #666; }
+    .status { font-size: 13px; color: #444; }
+
+    /* Piano */
+    .piano {
+      position: relative;
+      height: 240px;
+      user-select: none;
+      -webkit-user-select: none;
+      border-radius: 14px;
+      background: #f7f7f7;
+      border: 1px solid #ddd;
+      padding: 16px;
+      overflow-x: auto;
+    }
+    .keys {
+      position: relative;
+      height: 200px;
+      width: 980px;
+      margin: 0 auto;
+    }
+    .white-keys { display: flex; position: absolute; left: 0; top: 0; height: 200px; }
+    .white {
+      position: relative;
+      width: 70px;
+      height: 200px;
+      border: 1px solid #bbb;
+      border-bottom-left-radius: 10px;
+      border-bottom-right-radius: 10px;
+      background: white;
+      box-sizing: border-box;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 12px;
+      color: #222;
+      cursor: pointer;
+    }
+    .white.active { background: #eaeaea; border-color: #666; }
+
+    .black-keys { position: absolute; left: 0; top: 0; height: 125px; width: 980px; pointer-events: none; }
+    .black {
+      position: absolute;
+      width: 44px;
+      height: 125px;
+      background: #111;
+      border-radius: 0 0 8px 8px;
+      border: 1px solid #000;
+      box-sizing: border-box;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 10px;
+      color: #eee;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+    .black.active { background: #333; }
+
+    .note {
+      display: grid;
+      place-items: center;
+      gap: 4px;
+      line-height: 1;
+    }
+    .note .name {
+      font-weight: 800;
+      font-size: 16px;
+      letter-spacing: 0.3px;
+    }
+    .note .kbd {
+      font-size: 12px;
+      opacity: 0.75;
+      padding: 2px 6px;
+      border-radius: 8px;
+      border: 1px solid rgba(0,0,0,0.2);
+      background: rgba(255,255,255,0.6);
+    }
+    .black .note .kbd {
+      border-color: rgba(255,255,255,0.25);
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebAudio Keyboard</h1>
+
+  <div class="panel">
+    <div class="row">
+      <button id="startBtn">Start Audio</button>
+      <span class="small">Click once to enable audio, then use your keyboard or click the keys.</span>
+      <span class="status" id="status"></span>
+    </div>
+
+    <div class="row">
+      <label>
+        Waveform
+        <select id="waveform">
+          <option value="sine">sine</option>
+          <option value="sawtooth">sawtooth</option>
+          <option value="square">square</option>
+          <option value="triangle">triangle</option>
+        </select>
+      </label>
+
+      <label>
+        Master Volume
+        <input id="masterVol" type="range" min="0" max="1" step="0.01" value="0.7"/>
+      </label>
+
+      <label>
+        Release (ms)
+        <input id="releaseMs" type="range" min="20" max="1200" step="10" value="220"/>
+      </label>
+    </div>
+
+    <div class="hint">
+      Mapping (two octaves): Z S X D C V G B H N J M and Q 2 W 3 E R 5 T 6 Y 7 U
+    </div>
+
+    <div class="piano">
+      <div class="keys">
+        <div class="white-keys" id="whiteKeys"></div>
+        <div class="black-keys" id="blackKeys"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      // Reliable physical key codes -> frequencies
+      const codeToFrequency = {
+        // C4..B4
+        KeyZ: 261.6255653005986,  // C4
+        KeyS: 277.1826309768721,  // C#4
+        KeyX: 293.6647679174076,  // D4
+        KeyD: 311.1269837220809,  // D#4
+        KeyC: 329.6275569128699,  // E4
+        KeyV: 349.2282314330039,  // F4
+        KeyG: 369.9944227116344,  // F#4
+        KeyB: 391.9954359817493,  // G4
+        KeyH: 415.3046975799451,  // G#4
+        KeyN: 440.0,              // A4
+        KeyJ: 466.1637615180899,  // A#4
+        KeyM: 493.8833012561241,  // B4
+
+        // C5..B5
+        KeyQ: 523.2511306011972,  // C5
+        Digit2: 554.3652619537442,// C#5
+        KeyW: 587.3295358348151,  // D5
+        Digit3: 622.2539674441618,// D#5
+        KeyE: 659.2551138257399,  // E5
+        KeyR: 698.4564628660078,  // F5
+        Digit5: 739.9888454232688,// F#5
+        KeyT: 783.9908719634986,  // G5
+        Digit6: 830.6093951598903,// G#5
+        KeyY: 880.0,              // A5
+        Digit7: 932.3275230361798,// A#5
+        KeyU: 987.7666025122482,  // B5
+      };
+
+      // Piano layout with note names + keyboard keys
+      const WHITE_ORDER = [
+        { note: "C4",  code: "KeyZ" },
+        { note: "D4",  code: "KeyX" },
+        { note: "E4",  code: "KeyC" },
+        { note: "F4",  code: "KeyV" },
+        { note: "G4",  code: "KeyB" },
+        { note: "A4",  code: "KeyN" },
+        { note: "B4",  code: "KeyM" },
+        { note: "C5",  code: "KeyQ" },
+        { note: "D5",  code: "KeyW" },
+        { note: "E5",  code: "KeyE" },
+        { note: "F5",  code: "KeyR" },
+        { note: "G5",  code: "KeyT" },
+        { note: "A5",  code: "KeyY" },
+        { note: "B5",  code: "KeyU" },
+      ];
+
+      const BLACKS = [
+        { note: "C#4", code: "KeyS",  leftWhiteIndex: 0 },
+        { note: "D#4", code: "KeyD",  leftWhiteIndex: 1 },
+        { note: "F#4", code: "KeyG",  leftWhiteIndex: 3 },
+        { note: "G#4", code: "KeyH",  leftWhiteIndex: 4 },
+        { note: "A#4", code: "KeyJ",  leftWhiteIndex: 5 },
+        { note: "C#5", code: "Digit2",leftWhiteIndex: 7 },
+        { note: "D#5", code: "Digit3",leftWhiteIndex: 8 },
+        { note: "F#5", code: "Digit5",leftWhiteIndex: 10 },
+        { note: "G#5", code: "Digit6",leftWhiteIndex: 11 },
+        { note: "A#5", code: "Digit7",leftWhiteIndex: 12 },
+      ];
+
+      const startBtn = document.getElementById("startBtn");
+      const waveformEl = document.getElementById("waveform");
+      const masterVolEl = document.getElementById("masterVol");
+      const releaseMsEl = document.getElementById("releaseMs");
+      const statusEl = document.getElementById("status");
+      const whiteKeysEl = document.getElementById("whiteKeys");
+      const blackKeysEl = document.getElementById("blackKeys");
+
+      // Audio
+      let audioCtx = null;
+      let globalGain = null;
+      const activeVoices = {}; // code -> { osc, gainNode }
+      const ATTACK = 0.01, DECAY = 0.08, SUSTAIN = 0.65;
+      const EPS = 0.0001;
+
+      function ensureAudio() {
+        if (audioCtx) return;
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        globalGain = audioCtx.createGain();
+        globalGain.gain.setValueAtTime(parseFloat(masterVolEl.value), audioCtx.currentTime);
+        globalGain.connect(audioCtx.destination);
+        updateStatus();
+      }
+
+      async function resumeAudioIfNeeded() {
+        ensureAudio();
+        if (audioCtx.state === "suspended") await audioCtx.resume();
+        updateStatus();
+      }
+
+      function updateStatus() {
+        if (!audioCtx) statusEl.textContent = "";
+        else statusEl.textContent = `Audio: ${audioCtx.state}`;
+      }
+
+      function keyCapFromCode(code) {
+        if (code.startsWith("Key")) return code.replace("Key", "");
+        if (code.startsWith("Digit")) return code.replace("Digit", "");
+        return code;
+      }
+
+      function setKeyActive(code, active) {
+        const el = document.querySelector(`[data-code="${code}"]`);
+        if (el) el.classList.toggle("active", active);
+      }
+
+      function computePerVoiceGain() {
+        const n = Math.max(1, Object.keys(activeVoices).length);
+        return 1 / Math.sqrt(n);
+      }
+
+      function normalizeAllVoices() {
+        if (!audioCtx) return;
+        const now = audioCtx.currentTime;
+        const per = computePerVoiceGain();
+        for (const code of Object.keys(activeVoices)) {
+          const g = activeVoices[code].gainNode.gain;
+          g.cancelScheduledValues(now);
+          g.setTargetAtTime(per, now, 0.015);
+        }
+      }
+
+      function playNote(code) {
+        const freq = codeToFrequency[code];
+        if (!freq || !audioCtx) return;
+
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        osc.type = waveformEl.value;
+        osc.frequency.setValueAtTime(freq, now);
+
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.setValueAtTime(EPS, now);
+
+        osc.connect(gainNode);
+        gainNode.connect(globalGain);
+
+        activeVoices[code] = { osc, gainNode };
+        setKeyActive(code, true);
+
+        normalizeAllVoices();
+
+        const base = computePerVoiceGain();
+        const peak = base;
+        const sustainLevel = base * SUSTAIN;
+
+        gainNode.gain.cancelScheduledValues(now);
+        gainNode.gain.setValueAtTime(EPS, now);
+        gainNode.gain.linearRampToValueAtTime(peak, now + ATTACK);
+        gainNode.gain.linearRampToValueAtTime(sustainLevel, now + ATTACK + DECAY);
+
+        osc.start(now);
+      }
+
+      function stopNote(code) {
+        const voice = activeVoices[code];
+        if (!voice || !audioCtx) return;
+
+        const now = audioCtx.currentTime;
+        const release = Math.max(0.02, parseFloat(releaseMsEl.value) / 1000);
+
+        const g = voice.gainNode.gain;
+        g.cancelScheduledValues(now);
+
+        const current = Math.max(EPS, g.value || EPS);
+        g.setValueAtTime(current, now);
+        g.exponentialRampToValueAtTime(EPS, now + release);
+
+        voice.osc.stop(now + release + 0.02);
+
+        setTimeout(() => {
+          delete activeVoices[code];
+          setKeyActive(code, false);
+          normalizeAllVoices();
+        }, (release + 0.05) * 1000);
+      }
+
+      function makeKeyContent(noteName, code) {
+        const wrap = document.createElement("div");
+        wrap.className = "note";
+
+        const name = document.createElement("div");
+        name.className = "name";
+        // Show C, C#, D... without octave as "actual key"
+        name.textContent = noteName.replace(/[0-9]/g, "");
+
+        const kbd = document.createElement("div");
+        kbd.className = "kbd";
+        kbd.textContent = keyCapFromCode(code);
+
+        wrap.appendChild(name);
+        wrap.appendChild(kbd);
+        return wrap;
+      }
+
+      function buildPiano() {
+        // White keys
+        WHITE_ORDER.forEach((k) => {
+          const div = document.createElement("div");
+          div.className = "white";
+          div.dataset.code = k.code;
+          div.appendChild(makeKeyContent(k.note, k.code));
+
+          div.addEventListener("mousedown", async () => {
+            await resumeAudioIfNeeded();
+            if (!activeVoices[k.code]) playNote(k.code);
+          });
+          div.addEventListener("mouseup", () => stopNote(k.code));
+          div.addEventListener("mouseleave", () => stopNote(k.code));
+
+          whiteKeysEl.appendChild(div);
+        });
+
+        // Black keys positioned between whites
+        const WHITE_W = 70;
+        const BLACK_W = 44;
+
+        BLACKS.forEach((b) => {
+          const div = document.createElement("div");
+          div.className = "black";
+          div.dataset.code = b.code;
+
+          const left = (b.leftWhiteIndex + 1) * WHITE_W - (BLACK_W / 2);
+          div.style.left = `${left}px`;
+
+          div.appendChild(makeKeyContent(b.note, b.code));
+
+          div.addEventListener("mousedown", async (e) => {
+            e.stopPropagation();
+            await resumeAudioIfNeeded();
+            if (!activeVoices[b.code]) playNote(b.code);
+          });
+          div.addEventListener("mouseup", (e) => { e.stopPropagation(); stopNote(b.code); });
+          div.addEventListener("mouseleave", (e) => { e.stopPropagation(); stopNote(b.code); });
+
+          blackKeysEl.appendChild(div);
+        });
+      }
+
+      buildPiano();
+
+      // Controls
+      startBtn.addEventListener("click", async () => {
+        await resumeAudioIfNeeded();
+        startBtn.textContent = "Audio Started";
+        startBtn.disabled = true;
+      });
+
+      masterVolEl.addEventListener("input", () => {
+        if (!audioCtx || !globalGain) return;
+        globalGain.gain.setTargetAtTime(parseFloat(masterVolEl.value), audioCtx.currentTime, 0.01);
+      });
+
+      // Keyboard listeners
+      window.addEventListener("keydown", async (event) => {
+        if (event.repeat) return;
+        const code = event.code;
+        if (!codeToFrequency[code]) return;
+
+        event.preventDefault();
+        await resumeAudioIfNeeded();
+
+        if (!activeVoices[code]) playNote(code);
+      }, { passive: false });
+
+      window.addEventListener("keyup", (event) => {
+        const code = event.code;
+        if (!codeToFrequency[code]) return;
+
+        event.preventDefault();
+        if (activeVoices[code]) stopNote(code);
+      }, { passive: false });
+    });
+  </script>
+</body>
+</html>

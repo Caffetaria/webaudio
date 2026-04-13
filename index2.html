@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Lab 2 Synth</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 20px; }
+    h1 { margin: 0 0 8px 0; }
+    .row { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+    .panel { border: 1px solid #ddd; border-radius: 10px; padding: 12px; min-width: 280px; }
+    label { display: grid; grid-template-columns: 150px 1fr 60px; gap: 10px; align-items: center; margin: 6px 0; }
+    input[type="range"] { width: 100%; }
+    select, button { padding: 8px; }
+    .kbd { display: grid; grid-template-columns: repeat(13, minmax(38px, 1fr)); gap: 8px; margin-top: 14px; max-width: 980px;}
+    .key {
+      border: 1px solid #ccc; border-radius: 10px; padding: 12px 6px;
+      text-align: center; user-select: none; cursor: pointer;
+      background: #fafafa;
+    }
+    .key.black { background: #222; color: #fff; border-color: #111; }
+    .key.down { transform: translateY(1px); filter: brightness(0.95); }
+    .small { color:#555; font-size: 12px; }
+    .badge { display:inline-block; padding: 2px 8px; border-radius: 999px; background:#f2f2f2; font-size:12px; }
+  </style>
+</head>
+<body>
+  <h1>Lab 2 Synth</h1>
+  <div class="small">Click keys or use keyboard: A W S E D F T G Y H U J K</div>
+
+  <div class="row" style="margin-top:12px;">
+    <div class="panel">
+      <div class="row" style="justify-content:space-between;">
+        <div><span class="badge">Mode</span></div>
+        <select id="mode">
+          <option value="add">Additive</option>
+          <option value="am">AM</option>
+          <option value="fm">FM</option>
+          <option value="hybrid">Hybrid Mix</option>
+        </select>
+      </div>
+
+      <label><span>Master Volume</span><input id="masterVol" type="range" min="0" max="1" step="0.001" value="0.25"><span id="masterVolVal">0.25</span></label>
+      <label><span>Attack</span><input id="a" type="range" min="0.001" max="1.5" step="0.001" value="0.01"><span id="aVal">0.01</span></label>
+      <label><span>Decay</span><input id="d" type="range" min="0.001" max="1.5" step="0.001" value="0.12"><span id="dVal">0.12</span></label>
+      <label><span>Sustain</span><input id="s" type="range" min="0" max="1" step="0.001" value="0.6"><span id="sVal">0.60</span></label>
+      <label><span>Release</span><input id="r" type="range" min="0.005" max="2.5" step="0.001" value="0.25"><span id="rVal">0.25</span></label>
+    </div>
+
+    <div class="panel">
+      <label><span>Partials</span><input id="partials" type="range" min="3" max="10" step="1" value="5"><span id="partialsVal">5</span></label>
+      <label><span>Roll-off</span><input id="rolloff" type="range" min="0.3" max="2.5" step="0.01" value="1.2"><span id="rolloffVal">1.20</span></label>
+      <label><span>Add Gain</span><input id="addGain" type="range" min="0" max="1" step="0.001" value="0.8"><span id="addGainVal">0.80</span></label>
+    </div>
+
+    <div class="panel">
+      <label><span>AM Mod Freq</span><input id="amModFreq" type="range" min="0.1" max="80" step="0.1" value="6"><span id="amModFreqVal">6.0</span></label>
+      <label><span>AM Depth</span><input id="amDepth" type="range" min="0" max="1" step="0.001" value="0.8"><span id="amDepthVal">0.80</span></label>
+      <label><span>AM Gain</span><input id="amGain" type="range" min="0" max="1" step="0.001" value="0.7"><span id="amGainVal">0.70</span></label>
+    </div>
+
+    <div class="panel">
+      <label><span>FM Mod Freq</span><input id="fmModFreq" type="range" min="0.1" max="600" step="0.1" value="120"><span id="fmModFreqVal">120.0</span></label>
+      <label><span>FM Index</span><input id="fmIndex" type="range" min="0" max="600" step="1" value="120"><span id="fmIndexVal">120</span></label>
+      <label><span>FM Gain</span><input id="fmGain" type="range" min="0" max="1" step="0.001" value="0.65"><span id="fmGainVal">0.65</span></label>
+    </div>
+
+    <div class="panel">
+      <label><span>LFO Rate</span><input id="lfoRate" type="range" min="0" max="20" step="0.01" value="5"><span id="lfoRateVal">5.00</span></label>
+      <label><span>LFO Amount</span><input id="lfoAmt" type="range" min="0" max="200" step="1" value="15"><span id="lfoAmtVal">15</span></label>
+      <label><span>LFO Route</span>
+        <select id="lfoRoute">
+          <option value="vibrato">Vibrato</option>
+          <option value="tremolo">Tremolo</option>
+        </select>
+      </label>
+      <button id="startAudio">Enable Audio</button>
+      <button id="panic">Panic</button>
+    </div>
+  </div>
+
+  <div id="keyboard" class="kbd"></div>
+
+  <script>
+    const KEY_ORDER = [
+      { key:"a", midi:60 },{ key:"w", midi:61 },{ key:"s", midi:62 },
+      { key:"e", midi:63 },{ key:"d", midi:64 },{ key:"f", midi:65 },
+      { key:"t", midi:66 },{ key:"g", midi:67 },{ key:"y", midi:68 },
+      { key:"h", midi:69 },{ key:"u", midi:70 },{ key:"j", midi:71 },
+      { key:"k", midi:72 }
+    ];
+
+    const midiToFreq = m => 440 * Math.pow(2,(m-69)/12);
+    let audioCtx, masterGain;
+    const active = new Map();
+
+    function ensureAudio(){
+      if(audioCtx) return;
+      audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = masterVol.value;
+      masterGain.connect(audioCtx.destination);
+    }
+
+    function adsr(param, now, a,d,s){
+      param.setValueAtTime(0.0001,now);
+      param.linearRampToValueAtTime(1,now+a);
+      param.linearRampToValueAtTime(s,now+a+d);
+    }
+
+    function release(param, now, r){
+      param.exponentialRampToValueAtTime(0.0001,now+r);
+    }
+
+    function noteOn(k,f){
+      if(active.has(k)) return;
+      const now = audioCtx.currentTime;
+      const g = audioCtx.createGain();
+      g.gain.value = 0.0001;
+      const osc = audioCtx.createOscillator();
+      osc.frequency.value = f;
+      osc.connect(g).connect(masterGain);
+      osc.start();
+      adsr(g.gain,now,+a.value,+d.value,+s.value);
+      active.set(k,{osc,g});
+    }
+
+    function noteOff(k){
+      const v = active.get(k);
+      if(!v) return;
+      release(v.g.gain,audioCtx.currentTime,+r.value);
+      v.osc.stop(audioCtx.currentTime+ +r.value+0.05);
+      active.delete(k);
+    }
+
+    keyboard.innerHTML = KEY_ORDER.map(k=>`<div class="key" data-k="${k.key}" data-f="${midiToFreq(k.midi)}">${k.key.toUpperCase()}</div>`).join("");
+
+    document.querySelectorAll(".key").forEach(el=>{
+      el.onmousedown=async()=>{ensureAudio();await audioCtx.resume();noteOn(el.dataset.k,+el.dataset.f);el.classList.add("down")};
+      el.onmouseup=()=>{noteOff(el.dataset.k);el.classList.remove("down")};
+    });
+
+    window.onkeydown=e=>{if(active.has(e.key))return;const el=document.querySelector(`[data-k="${e.key}"]`);if(el){ensureAudio();noteOn(e.key,+el.dataset.f);el.classList.add("down")}};
+    window.onkeyup=e=>{noteOff(e.key);const el=document.querySelector(`[data-k="${e.key}"]`);if(el)el.classList.remove("down")};
+
+    panic.onclick=()=>active.forEach((_,k)=>noteOff(k));
+    startAudio.onclick=()=>ensureAudio();
+  </script>
+</body>
+</html>
