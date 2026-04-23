@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lab 5 - Automated Composition with Pitch Set Theory</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f6f7fb;
+      color: #222;
+      margin: 0;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      padding: 24px;
+      border-radius: 14px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+    }
+
+    h1, h2 {
+      margin-top: 0;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    label {
+      font-weight: bold;
+    }
+
+    input, select, button, textarea {
+      padding: 10px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+
+    button {
+      cursor: pointer;
+      border: none;
+      background: #2d6cdf;
+      color: white;
+      font-weight: bold;
+    }
+
+    button:hover {
+      background: #1f56b6;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .output {
+      margin-top: 24px;
+    }
+
+    .panel {
+      background: #f1f4fa;
+      padding: 14px;
+      border-radius: 10px;
+      margin-top: 12px;
+      white-space: pre-wrap;
+    }
+
+    canvas {
+      margin-top: 16px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .small {
+      font-size: 13px;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Lab 5: Automated Composition with Pitch Set Theory</h1>
+    <p>
+      Enter a pitch class sequence using integers from 0 to 11. The system will generate
+      a composition by randomly applying transpose, inverse, and retrograde operations.
+    </p>
+
+    <div class="controls">
+      <div class="control-group">
+        <label for="pitchSet">Initial Pitch Class Sequence</label>
+        <input id="pitchSet" value="0,2,4,7" />
+        <div class="small">Example: 0,2,4,7 or 0,1,4,6,9</div>
+      </div>
+
+      <div class="control-group">
+        <label for="rootOctave">Base MIDI Root</label>
+        <input id="rootOctave" type="number" value="60" min="36" max="84" />
+        <div class="small">60 = middle C</div>
+      </div>
+
+      <div class="control-group">
+        <label for="numSteps">Number of Transform Steps</label>
+        <input id="numSteps" type="number" value="12" min="1" max="64" />
+      </div>
+
+      <div class="control-group">
+        <label for="tempo">Tempo (BPM)</label>
+        <input id="tempo" type="number" value="120" min="40" max="240" />
+      </div>
+    </div>
+
+    <div class="button-row">
+      <button id="generateBtn">Generate Composition</button>
+      <button id="playBtn">Play</button>
+      <button id="stopBtn">Stop</button>
+    </div>
+
+    <div class="output">
+      <h2>Transformation History</h2>
+      <div id="historyPanel" class="panel"></div>
+
+      <h2>Generated MIDI Notes</h2>
+      <div id="notesPanel" class="panel"></div>
+
+      <h2>Piano Roll Visualization</h2>
+      <canvas id="pianoRoll" width="820" height="240"></canvas>
+    </div>
+  </div>
+
+  <script>
+    let audioCtx = null;
+    let activeOscillators = [];
+    let scheduledTimeouts = [];
+    let generatedNotes = [];
+    let transformLog = [];
+
+    function mod12(n) {
+      return ((n % 12) + 12) % 12;
+    }
+
+    function parsePitchSet(input) {
+      return input
+        .split(",")
+        .map(x => x.trim())
+        .filter(x => x !== "")
+        .map(Number)
+        .filter(x => !Number.isNaN(x))
+        .map(mod12);
+    }
+
+    function transpose(seq, interval) {
+      return seq.map(pc => mod12(pc + interval));
+    }
+
+    function inverse(seq) {
+      if (seq.length === 0) return [];
+      const first = seq[0];
+      return seq.map(pc => mod12(first - (pc - first)));
+    }
+
+    function retrograde(seq) {
+      return [...seq].reverse();
+    }
+
+    function randomChoice(arr) {
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    function midiToFreq(midi) {
+      return 440 * Math.pow(2, (midi - 69) / 12);
+    }
+
+    function pitchClassToMidi(pc, baseMidi) {
+      return baseMidi + pc;
+    }
+
+    function buildComposition(initialSet, numSteps, baseMidi) {
+      let current = [...initialSet];
+      let noteEvents = [];
+      let history = [];
+
+      for (let i = 0; i < numSteps; i++) {
+        const opType = randomChoice(["transpose", "inverse", "retrograde"]);
+
+        if (opType === "transpose") {
+          const interval = Math.floor(Math.random() * 12);
+          current = transpose(current, interval);
+          history.push(`Step ${i + 1}: Transpose by ${interval} -> [${current.join(", ")}]`);
+        } else if (opType === "inverse") {
+          current = inverse(current);
+          history.push(`Step ${i + 1}: Inverse -> [${current.join(", ")}]`);
+        } else {
+          current = retrograde(current);
+          history.push(`Step ${i + 1}: Retrograde -> [${current.join(", ")}]`);
+        }
+
+        // Above-and-beyond feature: assign slight rhythmic randomness
+        current.forEach(pc => {
+          const durationBeats = randomChoice([0.5, 0.5, 1, 1, 1.5]);
+          const velocity = randomChoice([0.18, 0.22, 0.26, 0.3]);
+          noteEvents.push({
+            midi: pitchClassToMidi(pc, baseMidi),
+            pitchClass: pc,
+            durationBeats,
+            velocity
+          });
+        });
+      }
+
+      return { noteEvents, history };
+    }
+
+    function drawPianoRoll(notes) {
+      const canvas = document.getElementById("pianoRoll");
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (notes.length === 0) return;
+
+      const padding = 20;
+      const noteWidth = Math.max(8, (canvas.width - padding * 2) / notes.length);
+      const minMidi = Math.min(...notes.map(n => n.midi)) - 1;
+      const maxMidi = Math.max(...notes.map(n => n.midi)) + 1;
+      const range = maxMidi - minMidi + 1;
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.strokeStyle = "#e0e0e0";
+      for (let i = 0; i < range; i++) {
+        const y = padding + (i / range) * (canvas.height - 2 * padding);
+        ctx.beginPath();
+        ctx.moveTo(padding, y);
+        ctx.lineTo(canvas.width - padding, y);
+        ctx.stroke();
+      }
+
+      notes.forEach((note, i) => {
+        const x = padding + i * noteWidth;
+        const yNorm = (note.midi - minMidi) / range;
+        const y = canvas.height - padding - yNorm * (canvas.height - 2 * padding);
+
+        ctx.fillStyle = "#2d6cdf";
+        ctx.fillRect(x, y - 8, noteWidth * Math.max(0.7, note.durationBeats * 0.8), 12);
+      });
+
+      ctx.fillStyle = "#333";
+      ctx.font = "12px Arial";
+      ctx.fillText("Higher pitch", 10, 15);
+      ctx.fillText("Lower pitch", 10, canvas.height - 8);
+    }
+
+    function stopPlayback() {
+      activeOscillators.forEach(obj => {
+        try {
+          obj.osc.stop();
+        } catch (e) {}
+      });
+      activeOscillators = [];
+
+      scheduledTimeouts.forEach(id => clearTimeout(id));
+      scheduledTimeouts = [];
+    }
+
+    function playComposition(notes, bpm) {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      stopPlayback();
+
+      const beatMs = 60000 / bpm;
+      let currentTimeMs = 0;
+
+      notes.forEach(note => {
+        const timeoutId = setTimeout(() => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+
+          osc.type = "sine";
+          osc.frequency.value = midiToFreq(note.midi);
+
+          gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(note.velocity, audioCtx.currentTime + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + note.durationBeats * beatMs / 1000);
+
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+
+          osc.start();
+          osc.stop(audioCtx.currentTime + note.durationBeats * beatMs / 1000 + 0.03);
+
+          activeOscillators.push({ osc, gain });
+        }, currentTimeMs);
+
+        scheduledTimeouts.push(timeoutId);
+        currentTimeMs += note.durationBeats * beatMs;
+      });
+    }
+
+    document.getElementById("generateBtn").addEventListener("click", () => {
+      const pitchSetInput = document.getElementById("pitchSet").value;
+      const baseMidi = parseInt(document.getElementById("rootOctave").value, 10);
+      const numSteps = parseInt(document.getElementById("numSteps").value, 10);
+
+      const initialSet = parsePitchSet(pitchSetInput);
+
+      if (initialSet.length === 0) {
+        alert("Please enter a valid pitch class sequence.");
+        return;
+      }
+
+      const result = buildComposition(initialSet, numSteps, baseMidi);
+      generatedNotes = result.noteEvents;
+      transformLog = result.history;
+
+      document.getElementById("historyPanel").textContent = transformLog.join("\n");
+      document.getElementById("notesPanel").textContent =
+        generatedNotes.map((n, i) =>
+          `${i + 1}. MIDI ${n.midi} (PC ${n.pitchClass}), duration=${n.durationBeats} beat(s), velocity=${n.velocity}`
+        ).join("\n");
+
+      drawPianoRoll(generatedNotes);
+    });
+
+    document.getElementById("playBtn").addEventListener("click", () => {
+      const bpm = parseInt(document.getElementById("tempo").value, 10);
+      if (generatedNotes.length === 0) {
+        alert("Generate a composition first.");
+        return;
+      }
+      playComposition(generatedNotes, bpm);
+    });
+
+    document.getElementById("stopBtn").addEventListener("click", () => {
+      stopPlayback();
+    });
+  </script>
+</body>
+</html>
