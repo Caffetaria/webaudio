@@ -1,8 +1,8 @@
 # Automated Composition with Pitch Set Theory in Web Audio
 
-For this lab, I implemented an automated composition system based on **pitch set theory** using **JavaScript** and the **Web Audio API**. Out of the three techniques we discussed in class—Markov chain learning, cellular automata, and pitch set theory I chose pitch set theory because it offered a compelling mix of musical structure and creative freedom. It also felt like a good way to better understand how formal musical operations can become the basis of an actual generative tool.
+For this lab, I implemented an automated composition system based on pitch set theory using JavaScript and the Web Audio API. Out of the three techniques we discussed in class—Markov chain learning, cellular automata, and pitch set theory I chose pitch set theory because it offered a compelling mix of musical structure and creative freedom. It also felt like a good way to better understand how formal musical operations can become the basis of an actual generative tool.
 
-At a high level, my system begins with a user-provided **pitch class sequence**, then repeatedly transforms it using the three core operations required for this lab: **transpose**, **inverse**, and **retrograde**. The transformed material is then mapped to audible notes and played back in the browser. Although the underlying rules are simple, the resulting compositions are surprisingly varied while still sounding related to the original musical idea.
+At a high level, my system begins with a user-provided pitch class sequence, then repeatedly transforms it using the three core operations required for this lab: transpose, inverse, and retrograde. The transformed material is then mapped to audible notes and played back in the browser. Although the underlying rules are simple, the resulting compositions are surprisingly varied while still sounding related to the original musical idea.
 
 ## Why I chose pitch set theory
 
@@ -12,7 +12,7 @@ I also liked that this technique makes the connection between music theory and c
 
 ## Pitch classes and transformations
 
-The basis of the project is the idea of a **pitch class**, which represents a note independent of octave. Instead of thinking in terms of specific frequencies or keyboard positions, pitch classes reduce notes to integers from **0 to 11**, where:
+The basis of the project is the idea of a pitch class, which represents a note independent of octave. Instead of thinking in terms of specific frequencies or keyboard positions, pitch classes reduce notes to integers from 0 to 11, where:
 
 - 0 = C  
 - 1 = C♯/D♭  
@@ -63,7 +63,7 @@ This design gives the program both continuity and variation. Because each step b
 
 After generating pitch class sequences, I needed a way to turn them into actual audible notes. To do that, I mapped each pitch class to a MIDI pitch relative to a user-defined base note. For example, if the base note is MIDI 60 (middle C), then pitch class 0 becomes 60, pitch class 4 becomes 64, and so on.
 
-I then converted the MIDI values into frequencies and used the **Web Audio API** to synthesize tones in the browser. I used a basic oscillator-based design, which was enough for this lab because the focus was on the composition process rather than on complex synthesis. Even with simple waveforms, the system was effective because the interest came from the changing note relationships and the pacing of the generated material.
+I then converted the MIDI values into frequencies and used the Web Audio API to synthesize tones in the browser. I used a basic oscillator-based design, which was enough for this lab because the focus was on the composition process rather than on complex synthesis. Even with simple waveforms, the system was effective because the interest came from the changing note relationships and the pacing of the generated material.
 
 I also added slight rhythmic variation so that every note would not have exactly the same duration. This made the playback feel less mechanical and helped the output sound more like a real generated phrase rather than a rigid sequence of identical tones.
 
@@ -75,9 +75,9 @@ One of the assignment requirements for pitch set theory was that the user should
 - base MIDI note,
 - and the number of transformation steps.
 
-In addition to audio playback, I added a simple visualization. The program displays both the **transformation history** and a **piano-roll-style drawing** of the resulting notes. The transformation history shows how the sequence changes over time, which makes the generative process much easier to follow. The piano-roll display gives a rough visual sense of melodic contour and density.
+In addition to audio playback, I added a simple visualization. The program displays both the transformation history and a piano-roll style drawing of the resulting notes. The transformation history shows how the sequence changes over time, which makes the generative process much easier to follow. The piano-roll display gives a rough visual sense of melodic contour and density.
 
-## What I learned from implementing it myself
+## What I learned
 
 One of the biggest insights I gained from this lab is that automated composition does not require a huge or highly complicated system in order to produce musically meaningful results. Before writing the code, it was easy to think of algorithmic composition as something that needs advanced machine learning or very elaborate procedural logic. But building this project showed me that even a small set of carefully chosen rules can generate output that feels coherent and intentional.
 
