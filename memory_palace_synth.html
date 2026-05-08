@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Memory Palace Synth</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at top, #202438, #0d0f18 70%);
+      color: #f4f1e8;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .app {
+      width: min(1100px, 96vw);
+      display: grid;
+      grid-template-columns: 720px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .stage {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 24px;
+      padding: 16px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(16px);
+    }
+
+    canvas {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 18px;
+      background: #171923;
+      cursor: crosshair;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 24px;
+      padding: 22px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(16px);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.05;
+    }
+
+    p {
+      color: #c9c5b7;
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin: 12px 0;
+      font-weight: 700;
+      font-size: 15px;
+      color: #16171f;
+      background: #ffe28a;
+      cursor: pointer;
+    }
+
+    button:hover {
+      filter: brightness(1.05);
+    }
+
+    .readout {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(0, 0, 0, 0.2);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      color: #d8d3c0;
+      white-space: pre-line;
+    }
+
+    .legend {
+      margin-top: 14px;
+      display: grid;
+      gap: 8px;
+      font-size: 13px;
+      color: #ded8c6;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .command-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    input {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.25);
+      color: #fff;
+      padding: 12px;
+      outline: none;
+    }
+
+    .small-button {
+      width: auto;
+      margin: 0;
+      padding: 12px 14px;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: #aaa38e;
+    }
+
+    @media (max-width: 980px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="stage">
+      <canvas id="room" width="700" height="500" aria-label="2D Memory Palace room"></canvas>
+    </section>
+
+    <aside class="panel">
+      <h1>The Memory Palace Synth</h1>
+      <p>
+        Move through the room with your mouse, arrow keys, or WASD. The closer you are to an object,
+        the louder, brighter, and more present its sound becomes.
+      </p>
+
+      <button id="startButton">Start Audio</button>
+
+      <div class="legend">
+        <span><i class="dot" style="background:#9bd2ff"></i> Window: filtered wind noise</span>
+        <span><i class="dot" style="background:#ffd166"></i> Lamp: warm FM tone</span>
+        <span><i class="dot" style="background:#f4978e"></i> Desk: rhythmic clicks</span>
+        <span><i class="dot" style="background:#b8a1ff"></i> Hidden memory: revealed by staying nearby</span>
+      </div>
+
+      <div class="command-row">
+        <input id="commandInput" placeholder="try: warmer, colder, faster, slower, reveal" />
+        <button class="small-button" id="commandButton">Run</button>
+      </div>
+      <p class="hint">
+        Commands are optional stretch-goal controls for live performance.
+      </p>
+
+      <div class="readout" id="readout">Audio not started yet.</div>
+    </aside>
+  </main>
+
+  <script>
+    const canvas = document.getElementById("room");
+    const ctx = canvas.getContext("2d");
+    const startButton = document.getElementById("startButton");
+    const readout = document.getElementById("readout");
+    const commandInput = document.getElementById("commandInput");
+    const commandButton = document.getElementById("commandButton");
+
+    const room = {
+      width: canvas.width,
+      height: canvas.height,
+      wallPadding: 38,
+    };
+
+    const listener = {
+      x: room.width / 2,
+      y: room.height / 2,
+      radius: 13,
+      speed: 3.2,
+    };
+
+    const keys = new Set();
+    let audio = null;
+    let audioStarted = false;
+    let brightnessBias = 1;
+    let rhythmRate = 1;
+    let hiddenRevealBoost = false;
+
+    const objects = [
+      {
+        id: "window",
+        label: "Window",
+        x: 110,
+        y: 85,
+        color: "#9bd2ff",
+        radius: 150,
+        module: null,
+      },
+      {
+        id: "lamp",
+        label: "Lamp",
+        x: 545,
+        y: 135,
+        color: "#ffd166",
+        radius: 170,
+        module: null,
+      },
+      {
+        id: "desk",
+        label: "Desk",
+        x: 505,
+        y: 390,
+        color: "#f4978e",
+        radius: 145,
+        module: null,
+      },
+      {
+        id: "memory",
+        label: "Hidden Memory",
+        x: 165,
+        y: 390,
+        color: "#b8a1ff",
+        radius: 115,
+        hidden: true,
+        stayTime: 0,
+        revealThreshold: 4.0,
+        module: null,
+      },
+    ];
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function distance(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    function distanceAmount(object) {
+      const d = distance(listener, object);
+      return clamp(1 - d / object.radius, 0, 1);
+    }
+
+    function equalPower(amount) {
+      // Smooth nonlinear fade. Quiet at the edge, more expressive nearby.
+      return Math.sin(amount * Math.PI * 0.5) ** 2;
+    }
+
+    function panFromX(x) {
+      return clamp((x / room.width) * 2 - 1, -1, 1);
+    }
+
+    function makeNoiseBuffer(audioContext, seconds = 2) {
+      const sampleRate = audioContext.sampleRate;
+      const buffer = audioContext.createBuffer(1, sampleRate * seconds, sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      return buffer;
+    }
+
+    function createReverbImpulse(audioContext, seconds = 2.5, decay = 2.5) {
+      const sampleRate = audioContext.sampleRate;
+      const length = sampleRate * seconds;
+      const impulse = audioContext.createBuffer(2, length, sampleRate);
+
+      for (let channel = 0; channel < impulse.numberOfChannels; channel++) {
+        const data = impulse.getChannelData(channel);
+        for (let i = 0; i < length; i++) {
+          const t = i / length;
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay);
+        }
+      }
+      return impulse;
+    }
+
+    class SoundModule {
+      constructor(audioContext, destination) {
+        this.ctx = audioContext;
+        this.output = audioContext.createGain();
+        this.output.gain.value = 0;
+        this.filter = audioContext.createBiquadFilter();
+        this.filter.type = "lowpass";
+        this.filter.frequency.value = 800;
+        this.filter.Q.value = 0.8;
+        this.panner = audioContext.createStereoPanner();
+        this.reverbSend = audioContext.createGain();
+        this.reverbSend.gain.value = 0.15;
+
+        this.output.connect(this.filter);
+        this.filter.connect(this.panner);
+        this.panner.connect(destination.dry);
+        this.panner.connect(this.reverbSend);
+        this.reverbSend.connect(destination.reverb);
+      }
+
+      update({ amount, pan, cutoff, reverb }) {
+        const now = this.ctx.currentTime;
+        this.output.gain.setTargetAtTime(amount, now, 0.08);
+        this.panner.pan.setTargetAtTime(pan, now, 0.08);
+        this.filter.frequency.setTargetAtTime(cutoff, now, 0.08);
+        this.reverbSend.gain.setTargetAtTime(reverb, now, 0.1);
+      }
+    }
+
+    class WindModule extends SoundModule {
+      constructor(audioContext, destination) {
+        super(audioContext, destination);
+
+        const source = audioContext.createBufferSource();
+        source.buffer = makeNoiseBuffer(audioContext, 2);
+        source.loop = true;
+
+        const highpass = audioContext.createBiquadFilter();
+        highpass.type = "highpass";
+        highpass.frequency.value = 160;
+
+        const lfo = audioContext.createOscillator();
+        lfo.frequency.value = 0.13;
+
+        const lfoDepth = audioContext.createGain();
+        lfoDepth.gain.value = 500;
+
+        source.connect(highpass);
+        highpass.connect(this.output);
+        lfo.connect(lfoDepth);
+        lfoDepth.connect(this.filter.frequency);
+
+        source.start();
+        lfo.start();
+      }
+    }
+
+    class LampFMModule extends SoundModule {
+      constructor(audioContext, destination) {
+        super(audioContext, destination);
+
+        const carrier = audioContext.createOscillator();
+        carrier.type = "sine";
+        carrier.frequency.value = 180;
+
+        const modulator = audioContext.createOscillator();
+        modulator.type = "sine";
+        modulator.frequency.value = 92;
+
+        const modDepth = audioContext.createGain();
+        modDepth.gain.value = 25;
+
+        const warmth = audioContext.createBiquadFilter();
+        warmth.type = "lowpass";
+        warmth.frequency.value = 1400;
+        warmth.Q.value = 0.5;
+
+        modulator.connect(modDepth);
+        modDepth.connect(carrier.frequency);
+        carrier.connect(warmth);
+        warmth.connect(this.output);
+
+        carrier.start();
+        modulator.start();
+      }
+    }
+
+    class DeskClickModule extends SoundModule {
+      constructor(audioContext, destination) {
+        super(audioContext, destination);
+        this.nextClickTime = 0;
+        this.activeAmount = 0;
+      }
+
+      triggerClick(time) {
+        const osc = this.ctx.createOscillator();
+        osc.type = "square";
+        osc.frequency.setValueAtTime(700 + Math.random() * 900, time);
+
+        const clickGain = this.ctx.createGain();
+        clickGain.gain.setValueAtTime(0.0001, time);
+        clickGain.gain.exponentialRampToValueAtTime(0.18, time + 0.006);
+        clickGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.06);
+
+        const clickFilter = this.ctx.createBiquadFilter();
+        clickFilter.type = "bandpass";
+        clickFilter.frequency.value = 1200;
+        clickFilter.Q.value = 6;
+
+        osc.connect(clickFilter);
+        clickFilter.connect(clickGain);
+        clickGain.connect(this.output);
+
+        osc.start(time);
+        osc.stop(time + 0.08);
+      }
+
+      update(params) {
+        super.update(params);
+        this.activeAmount = params.amount;
+
+        const now = this.ctx.currentTime;
+        const interval = clamp(0.55 / rhythmRate - this.activeAmount * 0.25, 0.12, 0.75);
+
+        if (this.activeAmount > 0.05 && now >= this.nextClickTime) {
+          this.triggerClick(now);
+          this.nextClickTime = now + interval + Math.random() * 0.08;
+        }
+      }
+    }
+
+    class HiddenMemoryModule extends SoundModule {
+      constructor(audioContext, destination) {
+        super(audioContext, destination);
+
+        const osc1 = audioContext.createOscillator();
+        osc1.type = "sine";
+        osc1.frequency.value = 55;
+
+        const osc2 = audioContext.createOscillator();
+        osc2.type = "triangle";
+        osc2.frequency.value = 82.41;
+
+        const detuneLfo = audioContext.createOscillator();
+        detuneLfo.frequency.value = 0.045;
+
+        const detuneDepth = audioContext.createGain();
+        detuneDepth.gain.value = 9;
+
+        const mix = audioContext.createGain();
+        mix.gain.value = 0.4;
+
+        detuneLfo.connect(detuneDepth);
+        detuneDepth.connect(osc2.detune);
+        osc1.connect(mix);
+        osc2.connect(mix);
+        mix.connect(this.output);
+
+        osc1.start();
+        osc2.start();
+        detuneLfo.start();
+      }
+    }
+
+    function initAudio() {
+      if (audioStarted) return;
+
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioContextClass();
+
+      const master = ctx.createGain();
+      master.gain.value = 0.75;
+
+      const dry = ctx.createGain();
+      dry.gain.value = 0.9;
+
+      const reverb = ctx.createConvolver();
+      reverb.buffer = createReverbImpulse(ctx, 2.8, 2.2);
+
+      const reverbGain = ctx.createGain();
+      reverbGain.gain.value = 0.38;
+
+      dry.connect(master);
+      reverb.connect(reverbGain);
+      reverbGain.connect(master);
+      master.connect(ctx.destination);
+
+      audio = { ctx, master, dry, reverb };
+
+      objects.find(o => o.id === "window").module = new WindModule(ctx, audio);
+      objects.find(o => o.id === "lamp").module = new LampFMModule(ctx, audio);
+      objects.find(o => o.id === "desk").module = new DeskClickModule(ctx, audio);
+      objects.find(o => o.id === "memory").module = new HiddenMemoryModule(ctx, audio);
+
+      audioStarted = true;
+      startButton.textContent = "Audio Running";
+    }
+
+    function updateAudio(dt) {
+      if (!audioStarted) return;
+
+      for (const object of objects) {
+        let amount = distanceAmount(object);
+
+        if (object.id === "memory") {
+          if (amount > 0.62 || hiddenRevealBoost) {
+            object.stayTime += dt;
+          } else {
+            object.stayTime = Math.max(0, object.stayTime - dt * 0.75);
+          }
+
+          const reveal = clamp(object.stayTime / object.revealThreshold, 0, 1);
+          amount *= reveal;
+        }
+
+        const expressiveAmount = equalPower(amount);
+        const pan = panFromX(object.x);
+        const cutoff = 180 + expressiveAmount * 3600 * brightnessBias;
+        const reverb = 0.45 - expressiveAmount * 0.28;
+
+        object.module.update({
+          amount: expressiveAmount * 0.45,
+          pan,
+          cutoff,
+          reverb,
+        });
+      }
+    }
+
+    function updateMovement() {
+      let dx = 0;
+      let dy = 0;
+
+      if (keys.has("ArrowLeft") || keys.has("a")) dx -= listener.speed;
+      if (keys.has("ArrowRight") || keys.has("d")) dx += listener.speed;
+      if (keys.has("ArrowUp") || keys.has("w")) dy -= listener.speed;
+      if (keys.has("ArrowDown") || keys.has("s")) dy += listener.speed;
+
+      listener.x = clamp(listener.x + dx, room.wallPadding, room.width - room.wallPadding);
+      listener.y = clamp(listener.y + dy, room.wallPadding, room.height - room.wallPadding);
+    }
+
+    function drawRoom() {
+      ctx.clearRect(0, 0, room.width, room.height);
+
+      // Floor
+      const grad = ctx.createLinearGradient(0, 0, room.width, room.height);
+      grad.addColorStop(0, "#202335");
+      grad.addColorStop(1, "#11131c");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, room.width, room.height);
+
+      // Room boundary
+      ctx.strokeStyle = "rgba(255,255,255,0.22)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(room.wallPadding, room.wallPadding, room.width - room.wallPadding * 2, room.height - room.wallPadding * 2);
+
+      // Subtle floor grid
+      ctx.strokeStyle = "rgba(255,255,255,0.035)";
+      ctx.lineWidth = 1;
+      for (let x = room.wallPadding; x < room.width - room.wallPadding; x += 35) {
+        ctx.beginPath();
+        ctx.moveTo(x, room.wallPadding);
+        ctx.lineTo(x, room.height - room.wallPadding);
+        ctx.stroke();
+      }
+      for (let y = room.wallPadding; y < room.height - room.wallPadding; y += 35) {
+        ctx.beginPath();
+        ctx.moveTo(room.wallPadding, y);
+        ctx.lineTo(room.width - room.wallPadding, y);
+        ctx.stroke();
+      }
+
+      for (const object of objects) {
+        const amount = distanceAmount(object);
+        const reveal = object.id === "memory" ? clamp(object.stayTime / object.revealThreshold, 0, 1) : 1;
+        const alpha = object.hidden ? 0.18 + reveal * 0.65 : 0.8;
+
+        // Influence radius
+        ctx.beginPath();
+        ctx.arc(object.x, object.y, object.radius, 0, Math.PI * 2);
+        ctx.fillStyle = object.color + "12";
+        ctx.fill();
+        ctx.strokeStyle = object.color + "26";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Object body
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.arc(object.x, object.y, 22 + amount * 6, 0, Math.PI * 2);
+        ctx.fillStyle = object.color;
+        ctx.shadowColor = object.color;
+        ctx.shadowBlur = 18 + amount * 30;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+
+        ctx.fillStyle = "rgba(255,255,255,0.88)";
+        ctx.font = "13px system-ui";
+        ctx.textAlign = "center";
+        const displayName = object.hidden && reveal < 1 ? "???" : object.label;
+        ctx.fillText(displayName, object.x, object.y + 42);
+
+        if (object.id === "memory" && reveal > 0 && reveal < 1) {
+          ctx.fillStyle = "rgba(255,255,255,0.72)";
+          ctx.fillText(`revealing ${Math.round(reveal * 100)}%`, object.x, object.y + 60);
+        }
+      }
+
+      // Listener/player
+      ctx.beginPath();
+      ctx.arc(listener.x, listener.y, listener.radius, 0, Math.PI * 2);
+      ctx.fillStyle = "#f8f4dd";
+      ctx.shadowColor = "#ffffff";
+      ctx.shadowBlur = 16;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      ctx.strokeStyle = "rgba(255,255,255,0.65)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(listener.x, listener.y, listener.radius + 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    function updateReadout() {
+      const lines = objects.map(object => {
+        let amount = distanceAmount(object);
+        let extra = "";
+        if (object.id === "memory") {
+          const reveal = clamp(object.stayTime / object.revealThreshold, 0, 1);
+          amount *= reveal;
+          extra = ` | reveal: ${Math.round(reveal * 100)}%`;
+        }
+        return `${object.label.padEnd(14)} proximity: ${Math.round(amount * 100).toString().padStart(3)}%${extra}`;
+      });
+
+      readout.textContent = audioStarted
+        ? `Position: (${Math.round(listener.x)}, ${Math.round(listener.y)})\n${lines.join("\n")}`
+        : "Audio not started yet.";
+    }
+
+    function runCommand(command) {
+      const c = command.trim().toLowerCase();
+      if (!c) return;
+
+      if (c.includes("warmer")) {
+        brightnessBias = 0.65;
+      } else if (c.includes("colder") || c.includes("brighter")) {
+        brightnessBias = 1.35;
+      } else if (c.includes("faster")) {
+        rhythmRate = 1.8;
+      } else if (c.includes("slower")) {
+        rhythmRate = 0.65;
+      } else if (c.includes("reveal")) {
+        hiddenRevealBoost = true;
+        setTimeout(() => hiddenRevealBoost = false, 4500);
+      } else if (c.includes("reset")) {
+        brightnessBias = 1;
+        rhythmRate = 1;
+        hiddenRevealBoost = false;
+        objects.find(o => o.id === "memory").stayTime = 0;
+      }
+
+      commandInput.value = "";
+    }
+
+    let lastTime = performance.now();
+    function loop(now) {
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      updateMovement();
+      updateAudio(dt);
+      drawRoom();
+      updateReadout();
+      requestAnimationFrame(loop);
+    }
+
+    startButton.addEventListener("click", async () => {
+      initAudio();
+      if (audio?.ctx?.state === "suspended") {
+        await audio.ctx.resume();
+      }
+    });
+
+    commandButton.addEventListener("click", () => runCommand(commandInput.value));
+    commandInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") runCommand(commandInput.value);
+    });
+
+    window.addEventListener("keydown", event => {
+      keys.add(event.key);
+    });
+
+    window.addEventListener("keyup", event => {
+      keys.delete(event.key);
+    });
+
+    canvas.addEventListener("mousemove", event => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      listener.x = clamp((event.clientX - rect.left) * scaleX, room.wallPadding, room.width - room.wallPadding);
+      listener.y = clamp((event.clientY - rect.top) * scaleY, room.wallPadding, room.height - room.wallPadding);
+    });
+
+    drawRoom();
+    updateReadout();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
